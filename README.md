@@ -1,6 +1,11 @@
 ## ARX testing
+This repo contains software for testing ARX boards for OVRO-LWA (phase 3).
 
-## 
+Design by Larry D'Addario. Supported by Jim Lux and Casey Law.
+
+## Test setup
+
+![setup image](/arxsetup.jpg)
 
 On the left, an RS485 module that plugs into a USB port on a PC. 
 Windows drivers will automatically
