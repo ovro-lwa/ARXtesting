@@ -1,8 +1,11 @@
 ARX Command Dictionary, rev 1.0
 
 Change log
-2020-07-08:  Rev 1.0, initial release to project team.  Clarify maximum response length.  Add character format.  Add notes about current developmental implementation.  Add description of wake-up process.
 2020-03-27:  Initial version, rev 0.0.
+2020-07-08:  Rev 1.0, initial release to project team.  Clarify maximum response length.  Add character format.  Add notes about current developmental implementation.  Add description of wake-up process.
+2020-12-15:  Rev 1.1.  Revise maximum total length of command and response strings from 64 to 80 characters.  Swap command namse SETS and SETA for better pneumonics.  Add commands for 1-wire temperature sensors.
+
+
 
 ======
 SYNTAX
@@ -16,14 +19,14 @@ Command:  <a><code><arguments><CR>
 where 
 <a> is the 1-byte address of the board.  Its value must be between 0x80 and 0xFF (128 to 255), allowing 128 possible addresses.  This is the only byte in a command that is not ASCII, and should be the only one with its MSb set, allowing it to be distinguished as the start of a command. 
 <code> is exactly 4 ASCII characters consisting of upper-case letters and digits.  This defines the command.
-<arguments> is a string of 0 to 58 ASCII characters.  Any character except <CR> is allowed, and the detailed syntax is command-dependent.  In most cases, <arguments> consists of hex digits from the set {0-9,A-F} and is broken into fields representing numerical values.  Numerical values are always sent MSB first.
+<arguments> is a string of 0 to 74 ASCII characters.  (Maximum length of the complete command message is 80 characters.)  Any character except <CR> is allowed, and the detailed syntax is command-dependent.  In most cases, <arguments> consists of hex digits from the set {0-9,A-F} and is broken into fields representing numerical values.  Numerical values are always sent MSB first.
 
 Commands are ignored by all boards whose address does not match <a>.  If no board has a matching address, no response is returned.  a=0x80 is a special case; no board should match that address, but instead it indicates that the command is addressed to all boards (broadcast).  They should all interpret it and act on it, but no board should send a response.  Broadcasting a command that normally returns meaningful data is probably useless since nothing will be returned, but it is not an error.
 
 Response (success):  <ACK>[<reply>]<CR>
 where
 <ACK> = 0x06 indicates that the command was accepted.
-<reply> can be any ASCII string or the null string, and the detailed syntax is command-dependent, but its maximum length is 62 characters.  (Thus the maximum length of the entire response message, including <ACK> and <CR>, is 64 characters, which is the same as the maximum length of the entire command message.) 
+<reply> can be any ASCII string or the null string, and the detailed syntax is command-dependent, but its maximum length is 78 characters.  (Thus the maximum length of the entire response message, including <ACK> and <CR>, is 80 characters, which is the same as the maximum length of the entire command message.) 
 
 Response (failure):  <NAK><e><f><CR>
 where 
@@ -57,8 +60,8 @@ List of available commands with brief descriptions:
 
     {"SETC",setChannel},         //configure one signal channel to given value
     {"GETC",getChannel},         //return current configuration of one signal channel
-    {"SETA",setAllSame},         //configure all signal channels to the same given value
-    {"SETS",setAll},             //configure all signal channels to different given values
+    {"SETS",setAllSame},         //configure all signal channels to the same given value
+    {"SETA",setAll},             //configure all signal channels to different given values
     {"LOAD",loadSettings},       //configure all signal channels to previously stored settings
     {"SAVE",saveSettings},       //save settings of all signal channels
     {"POWC",readPowerChannel},   //return total power at output of given chnanel [1]
@@ -68,6 +71,10 @@ List of available commands with brief descriptions:
     {"CURB",readBoardCurrent},   //return dc current drawn by circuitry on this ARX board [1]
     {"GETA",readSettings},       //return configurations of all channels
     {"TEMP",readTemperature},    //return processor's chip temperature
+    {"OWSE",find1W},             //find all 1-wire devices (again))
+    {"OWDC",getOWcount},         //return number of one-wire devices
+    {"OWSN",getOWserialNumber},  //return serial numbers of a one-wire device
+    {"OWTE",getOWtemperatures},  //return temperatures of OW sensors
 
 The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debuggig.  The remaining commands are intended to be used operationally.
 [1] Value can also be returned via the ANLG command by knowing the appropriate analog channel number.  On the ARX Test Board (but not on the final ARX Boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations
@@ -81,7 +88,7 @@ ECHO  reply with a copy of the argument string.
 syntax:
 <a>ECHO<anystring><CR>
 
-<anystring> is a sequence of up to 58 printable ASCII characters other than <CR>.
+<anystring> is a sequence of up to 74 printable ASCII characters other than <CR>.
 
 response:
 <ACK>ECHO<anystring><CR>
@@ -205,7 +212,7 @@ response:
 <NAK>34<CR>  I2C bus slave failed to acknowledge
 
 ---------------------------------------------------------------
-SETA     configure all signal channels to the same given value
+SETS     configure all signal channels to the same given value
 
 syntax:
 <a>SETAvvvv<CR>
@@ -217,7 +224,7 @@ response:
 <NAK>31<CR>  The number of argument characters was not 4.
 
 ---------------------------------------------------------------
-SETS     configure all signal channels to different given values
+SETA     configure all signal channels to different given values
 
 syntax:
 <a>SETSvvvv...vvvv<CR>
@@ -322,7 +329,7 @@ syntax:
 
 response:
 <ACK>vvvv....vvvv<CR>
-where the response string is 48 characters long, in 16 fields of 4-digit hex values, where each is the 16b configuration number of one channel, starting with channel 0.  Decoding is the same as for SETC.  If retrieving the value from any channel fails, the value is replaced by 0xFFFF.
+where the response string is 64 characters long, in 16 fields of 4-digit hex values, where each is the 16b configuration number of one channel, starting with channel 0.  Decoding is the same as for SETC.  If retrieving the value from any channel fails, the value is replaced by 0xFFFF.
 
 This command cannot fail.
 
@@ -333,7 +340,57 @@ syntax:
 <a>TEMP<CR>
 
 response:
-<a>vvvv<CR>
+<ACK><a>vvvv<CR>
 where vvvv is a 16b unsigned integer as 4 hex digits, representing the internal chip temperature of the microcontroller on the board.  The value is in units of 0.1C.
+
+---------------------------------------------------------------
+OWSE        find all 1-wire devices (again))
+
+Searches for devices on the 1-wire sensor bus.  Each board can have 0 to 16 1-wire temperature sensors.  Running this command should not be necessary, since it is done automatically at startup.  See also the OWDC command for getting the number of devices.  THIS COMMAND MAY TAKE LONGER THAN 100 ms TO RETURN A RESPONSE.
+
+syntax:
+<a>OWSE<CR>
+(No arguments.)
+
+response:
+<ACK><a>vv<CR>
+where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+
+---------------------------------------------------------------
+OWDC        return number of 1-wire devices
+
+Returns the previously-stored value of the number of devices on the 1-wire sensor bus.
+
+syntax:
+<a>OWDC<CR>
+(No arguments.)
+
+response:
+<a>vv<CR>
+where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+
+---------------------------------------------------------------
+OWSN         return serial number of a one-wire device
+
+syntax:
+<a>OWDCn<CR>
+where n is an index number (0 to N-1, where N is the number of 1-wire devices) as 1 hex digit.
+
+response:
+<a>vvvvvvvvvvvvvvvv<CR>
+where vvvvvvvvvvvvvvvv is the 64-bit serial number as 16 hex digits, MSB first.  Each 1-wire devie has a unique hardware serial number.
+
+---------------------------------------------------------------
+OWTE         return temperatures of OW sensors
+
+Get temperatures of all 1-wire temperature sensors.  The Rev H boards can have up to 16 of these sensors, but usually fewer will be installed.  THIS COMMAND MAY TAKE LONGER THAN 100 ms TO RETURN A RESPONSE.
+
+syntax:
+<a>OWTE<CR>
+(No arguments.)
+
+response:
+<a>vvvv...vvvv<CR>
+where vvvv is a 16b integer as 4 hex digits, representing measured temperature as a signed 12b number in units of .0625 C (4b after binary point).  There are N such values, in order of the sensor's index number (see OWSN), where N is the number of sensors.
 
 ---------------------------------------------------------------
