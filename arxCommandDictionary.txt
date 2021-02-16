@@ -1,9 +1,10 @@
-ARX Command Dictionary, rev 1.0
+ARX Command Dictionary, rev 1.2
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
 2020-07-08:  Rev 1.0, initial release to project team.  Clarify maximum response length.  Add character format.  Add notes about current developmental implementation.  Add description of wake-up process.
 2020-12-15:  Rev 1.1.  Revise maximum total length of command and response strings from 64 to 80 characters.  Swap command namse SETS and SETA for better pneumonics.  Add commands for 1-wire temperature sensors.
+2021-02-01:  Rev 1.2.  Add long response time for OWSE and OWTE.  Moved OWSE to utility group of commands.  Add error responses for OW?? commands.
 
 
 
@@ -56,6 +57,7 @@ List of available commands with brief descriptions:
     {"COMM",setComm},            //set RS485 address and baud rate
     {"GTIM",getTime},            //get time (seconds)
     {"STIM",setTime},            //set time (seconds)
+    {"OWSE",find1W},             //find all 1-wire devices (again))
     {"LAST",lastCommand},        //return a copy of last valid command received
 
     {"SETC",setChannel},         //configure one signal channel to given value
@@ -70,14 +72,13 @@ List of available commands with brief descriptions:
     {"CURA",readCurrentAll},     //return FE or PD current for all channels [1]
     {"CURB",readBoardCurrent},   //return dc current drawn by circuitry on this ARX board [1]
     {"GETA",readSettings},       //return configurations of all channels
-    {"TEMP",readTemperature},    //return processor's chip temperature
-    {"OWSE",find1W},             //find all 1-wire devices (again))
+    {"TEMP",readTemperature},    //return processor's chip temperature  
     {"OWDC",getOWcount},         //return number of one-wire devices
-    {"OWSN",getOWserialNumber},  //return serial numbers of a one-wire device
+    {"OWSN",getOWserialNumber},  //return serial number of a one-wire device
     {"OWTE",getOWtemperatures},  //return temperatures of OW sensors
 
 The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debuggig.  The remaining commands are intended to be used operationally.
-[1] Value can also be returned via the ANLG command by knowing the appropriate analog channel number.  On the ARX Test Board (but not on the final ARX Boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations
+[1] Value can also be returned via the ANLG command by knowing the appropriate analog channel number.  On the ARX Test Board (but not on the final ARX Boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations.
 
 
 COMMAND DESCRIPTIONS
@@ -346,7 +347,9 @@ where vvvv is a 16b unsigned integer as 4 hex digits, representing the internal 
 ---------------------------------------------------------------
 OWSE        find all 1-wire devices (again))
 
-Searches for devices on the 1-wire sensor bus.  Each board can have 0 to 16 1-wire temperature sensors.  Running this command should not be necessary, since it is done automatically at startup.  See also the OWDC command for getting the number of devices.  THIS COMMAND MAY TAKE LONGER THAN 100 ms TO RETURN A RESPONSE.
+Searches for devices on the 1-wire sensor bus.  Each board can have 0 to 16 1-wire temperature sensors.  Running this command should not be necessary, since it is done automatically at startup.  See also the OWDC command for getting the number of devices.  
+
+This command may take up to 1000 ms to return a response.
 
 syntax:
 <a>OWSE<CR>
@@ -355,6 +358,7 @@ syntax:
 response:
 <ACK><a>vv<CR>
 where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+<NAK>31    error communicating on 1-wire bus
 
 ---------------------------------------------------------------
 OWDC        return number of 1-wire devices
@@ -366,8 +370,10 @@ syntax:
 (No arguments.)
 
 response:
-<a>vv<CR>
+<ACK>vv<CR>
 where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+
+This command cannot fail.
 
 ---------------------------------------------------------------
 OWSN         return serial number of a one-wire device
@@ -377,20 +383,26 @@ syntax:
 where n is an index number (0 to N-1, where N is the number of 1-wire devices) as 1 hex digit.
 
 response:
-<a>vvvvvvvvvvvvvvvv<CR>
+<ACK>vvvvvvvvvvvvvvvv<CR>
 where vvvvvvvvvvvvvvvv is the 64-bit serial number as 16 hex digits, MSB first.  Each 1-wire devie has a unique hardware serial number.
+<NAK>31  argument invalid
+<NAK>32  argument out of range (>N).  
 
 ---------------------------------------------------------------
 OWTE         return temperatures of OW sensors
 
-Get temperatures of all 1-wire temperature sensors.  The Rev H boards can have up to 16 of these sensors, but usually fewer will be installed.  THIS COMMAND MAY TAKE LONGER THAN 100 ms TO RETURN A RESPONSE.
+Get temperatures of all 1-wire temperature sensors.  The Rev H boards can have up to 16 of these sensors, but usually fewer will be installed.  
+
+This command takes from ~100 ms to several hundred ms to return a response, depending on how many 1-wire sensors are installed.
 
 syntax:
 <a>OWTE<CR>
 (No arguments.)
 
 response:
-<a>vvvv...vvvv<CR>
+<ACK>vvvv...vvvv<CR>
 where vvvv is a 16b integer as 4 hex digits, representing measured temperature as a signed 12b number in units of .0625 C (4b after binary point).  There are N such values, in order of the sensor's index number (see OWSN), where N is the number of sensors.
+<NAK>31   no sensors available
+<NAK>32   unable to read all sensors
 
 ---------------------------------------------------------------
