@@ -4,7 +4,8 @@ Change log
 2020-03-27:  Initial version, rev 0.0.
 2020-07-08:  Rev 1.0, initial release to project team.  Clarify maximum response length.  Add character format.  Add notes about current developmental implementation.  Add description of wake-up process.
 2020-12-15:  Rev 1.1.  Revise maximum total length of command and response strings from 64 to 80 characters.  Swap command namse SETS and SETA for better pneumonics.  Add commands for 1-wire temperature sensors.
-2021-02-01:  Rev 1.2.  Add long response time for OWSE and OWTE.  Moved OWSE to utility group of commands.  Add error responses for OW?? commands.
+2021-02-01:  Rev 1.2.  Add long response time for OWSE and OWTE.  Moved OWSE to utility group of commands.  Add error responses for OW?? commands.  Revised LOAD and SAVE to allow choice of 3 memory locations and add error codes.
+2021-02-20:  For SETC, add explanation that attenuator bits are inverted.
 
 
 
@@ -186,9 +187,13 @@ The configuration number is decoded as follows.
 b0    lowpass filter selection 1=wide, 0=narrow.
 b1    ==b0 for normal operation, !=b0 for signal off.
 b2    highpass filter selection, 1=wide, 0=narrow.
-b3:8  first attenuator setting, 0:0.5:31.5 dB.
-b9:14 second attenuator setting, 0:0.5:31.5 dB.
+b3:8  first attenuator setting (inverted*), 0:0.5:31.5 dB.
+b9:14 second attenuator setting (inverted*), 0:0.5:31.5 dB.
 b15   input DC power (0=off, 1=on).
+
+*Note:  Attenuator control bits are inverted.  For example, in C:  
+   B = (attn ^ 0xFFFF) & 0x3F;
+where attn is desired attenuation in units of 0.5dB as UINT16, and B is the 6-bit value to use in the appropriate field (b3:8 or b9:14).
 
 response:
 <ACK><CR>    Success.
@@ -240,27 +245,32 @@ response:
 LOAD       configure all signal channels to previously stored settings
 
 syntax:
-<a>LOAD<CR>
+<a>LOADn<CR>
+where n='0', '1', or '2' is a single-character index to non-volatile memory.
 
 Read the configuration numbers for all 16 channels from on-board non-volatile memory and configure all channels accordingly.  This command can be broadcast.
 
 response:
-<ACK><CR>
+<ACK><CR>    success
+<NAK>31<CR>  memory index out of range
+<NAK>32<CR>  no data was stored at that memory index (configuration unchnaged)
+<NAK>33<CR>  I2C bus timeout
+<NAK>34<CR>  I2C bus slave failed to acknowledge
 
-This command cannot fail.
 
 ---------------------------------------------------------------
 SAVE      save settings of all signal channels
 
 syntax:
-<a>SAVE<CR>
+<a>SAVEn<CR>
+where n='0', '1', or '2' is a single-character index to non-volatile memory.
 
-Write the current configuration numbers of all channels to on-board non-volatile memory.  This command can be broadcast.  These values will be automatically loaded at the next power cycle or reset.
+Write the current configuration numbers of all channels to on-board non-volatile memory.  This command can be broadcast.  The values in cell 0 will be automatically loaded at the next power cycle or reset.
 
 response:
-<ACK><CR>
-
-This command cannot fail.
+<ACK><CR>      success
+<NAK>31<CR>    memory index out of range
+<NAK>32<CR>    write failed.  
 
 ---------------------------------------------------------------
 POWC    return total power at output of given chnanel

@@ -1,0 +1,41 @@
+ARX Simulator:  software status
+
+2021/02/20 LRD
+
+Ref:  "ARX Commmand Dictionary" rev 1.2.
+
+0.  DESCRIPTION
+
+The ARX Simulator consists of a Microchip evaluation board that includes a PIC16F15376 processor, connected to a small board that contains an RS485 line driver/receiver chip.  The processor is internally identical to the PIC16F15386 that is used on the actual ARX board, but the latter has more I/O pins.  The RS485 line driver/receiver is essentially the same as on the ARX board.  The evaluation board is powered and programmed via a USB cable.  It is loaded with software that is nearly identical to that used on the ARX board; the same source files are used, but when it is compiled for the simulator there are slight differences controlled by '#ifdef' blocks.
+
+
+1.  PARAMETERS AND LIMITATIONS
+
+For the ARX Simulator, the current software has the following properties:
+  The serial number is 3.
+  At power-up, the address is 2 (command address byte is 0x82).
+  At power-up, the baud rate is 19,200 Hz.  
+  Address and baud rate can be changed by the COMM command, but they revert to the default values after a power cycle.  (There is a hidden command that allows them to be changed permanently.)
+  The ADC uses an internal reference voltage of 4096 mV.  This means that each 10b result has a LSB value of 4.000 mV.
+  There are no hardware peripherals.  The real ARX board has sensors that produce analog voltages that are digitized by the on-chip ADC.  It also has digital temperature sensors on a 1-wire bus.  It also has a 16b port expander for each signal channel connected to the processor by an I2C bus.  Thus none of the commands associated with these devices will actually work; most will return an error code.  Those that use the ADC work (ANLG, POW*, CUR*), but normally they return a value near zero.  It would be possible to connect an analog voltage to some of the otherwise-unconnected processor breakout pins on the evaluation board and have that voltage measured.  Command OWDC (1-wire device count) returns 0, and OWSE (1-wire device search) fails.  Commands for configuring a channel and reading back its configuration (SET*, GET*) mostly return I2C bus failure codes.  An exception is SETC, which is simulated: it returns a success code but merely stores the commanded value in memory; the stored value is returned by GETC.  But the other commands (SETA, SETS, GETA) should fail.
+  The sofware is set up to behave as if it were on an ARX board with 6 channels (compared with 4 on the ARX Test Board and 16 channels on a full ARX board).  Commands that include a channel number argument will return <NAK>32 when the argument value exceeds 5.
+  For the SETC and GETC commands, the decoding of the 16b control word is as described in the Command Dictionary.  It is the same on the full ARX board but it is different on the ARX Test Board.  (It is also different from what is shown on the spreadsheet used with Jim Lux's code.)
+  The GTIM and STIM commands (get time and set time) work, but no clock is implemented.  Thus GTIM will always return the last value sent by STIM (or zero if no STIM command has been sent).  The LAST command does not include the time stamp.
+  The RSET command does not work as intended.  The processor seems to crash, rather than restart.  This is being investigated.
+
+Additional commands, not in the Command Dictionary, may be created later.
+
+
+2.  SCALINGS AND CONVERSIONS
+
+The ADC has a scale of 4mV/count.  Commands that involve analog-output sensors (CUR*,POW*) return the ADC count.
+
+The board-level current monitor (CURB) has a scale of 2.0 A/V.
+
+The channel input current monitora (CURC, CURA) have a scale of either 1.0 mA/V or 100.0 mA/V, depending on jumper settings on the board.  It is 1.0 mA/V for channels with fiber-connected inputs, in which case it measures the photodiode current; it is 100 mA/V for coax-connected inputs, in which case it measures the current drawn by the front end electronics at an antenna, which is powered via the coax cable. 
+
+The processor temperature (TEMP) is returned in units of 0.1C (e.g., 0x0200 is 51.2C).  The 1-wire sensors return temperature in units of 1/16 C (e.g., 0x0308 is 48.5C).    
+
+The RF output power monitor (POWC, POWA) is proportional to rms voltage with a scale of (1/7.5) V(rms)/V(adc) (gain of 7.5).  Theoretically, the power delivered to a 50 ohm load is then
+      P = (Vadc/7.5)^2/50
+where Vadc = (4.0mV)*N  and N is the ADC count, which is what the command returns.
