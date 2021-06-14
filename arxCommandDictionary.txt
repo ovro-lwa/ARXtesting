@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.3 (corresponds to software ver 1.2 [0x0102])
+ARX Command Dictionary, rev 1.5 (corresponds to software ver 0x0105)
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -8,6 +8,9 @@ Change log
 2021-02-20:  For SETC, add explanation that attenuator bits are inverted.
 2021-03-15:  SW ver 1.2 (0x0102).  Make address 127 (0x7F, address byte 0xFF) reserved.  GETSN command now returns 16b serial number as hex4 along with hex4 software version.  Add description of RSET command.
 2021-05-15:  Rev 1.3.  Add information about scaling of analog monitor data.  Add note to GTIM,STIM that no clock is implemented and delete time information from LAST.  Corrected response string lengths for POWA and CURA commands.
+2021-05-15:  Correction to scaling factor in POWC command description.
+2021-05-31:  Rev 1.4.  Corrections.  Fixed filter bit descriptions in SETC; added NAK responses for I2C failures to SETS and SETA; fixed argument string length in SETA.
+2021-06-12:  Rev 1.5.  LAST command no longer clears MSB of address byte.  Max length is 80 char.
 
 
 ======
@@ -191,7 +194,7 @@ response:
 <ACK><string>CR>
 
 where 
-<string> is usually the entire content of the last valid command, excluding only the final <CR>.  It includes the address byte <a> from that command with its MSB cleared; this allows distinguishing a broadcast command (a=0x80) from an individual-board command.  If there was no previous valid command (e.g., if LAST was the first valid command after a power cycle or reset) then <string> is empty.  If the entire response message would be longer than 64 characters, then <string> is truncated to 54 characters.
+<string> is usually the entire content of the last valid command, excluding only the final <CR>.  The address byte from that command is replaced by either 'n' for a normal command to this board or 'b' for a broadcast command.  If there was no previous valid command (e.g., if LAST was the first valid command after a power cycle or reset) then <string> is empty.  If the entire response message would be longer than 80 characters, then <string> is truncated to 80 characters.
 
 This command can be used to verify that a broadcast command was actually received, since the broadcast provides no acknowledgment.  
 
@@ -205,9 +208,9 @@ where n is the channel number within this board as one hex digit (0:F);
       vvvv is the 16b configuration number of the channel, as 4 hex digits.
 
 The configuration number is decoded as follows.
-b0    lowpass filter selection 1=wide, 0=narrow.
+b0    lowpass filter selection 1=narrow (LPF1, lower cutoff freq), 0=wide (LPF2).
 b1    ==b0 for normal operation, !=b0 for signal off.
-b2    highpass filter selection, 1=wide, 0=narrow.
+b2    highpass filter selection, 1=narrow (HPF1, higher cutoff freq), 0=wide (HPF2).
 b3:8  first attenuator setting (inverted*), 0:0.5:31.5 dB.
 b9:14 second attenuator setting (inverted*), 0:0.5:31.5 dB.
 b15   input DC power (0=off, 1=on).
@@ -249,6 +252,8 @@ where vvvv is the 16b configuration number (same meaning as in SETC).  The same 
 response:
 <ACK><CR>    Success.
 <NAK>31<CR>  The number of argument characters was not 4.
+<NAK>33<CR>  I2C bus timeout
+<NAK>34<CR>  I2C bus slave failed to acknowledge
 
 ---------------------------------------------------------------
 SETA     configure all signal channels to different given values
@@ -256,11 +261,13 @@ SETA     configure all signal channels to different given values
 syntax:
 <a>SETSvvvv...vvvv<CR>
 
-where the argument string is 48 characters in 16 fields of 4 each, giving the configuration numbers for each of the 16 channels of the board, starting with channel 0.  Each configuration number has the same meaning as in SETC.
+where the argument string is 64 characters in 16 fields of 4 each, giving the configuration numbers for each of the 16 channels of the board, starting with channel 0.  Each configuration number has the same meaning as in SETC.
 
 response:
 <ACK><CR>    Success.
-<NAK>31<CR>  The number of argument characters was not 48.
+<NAK>31<CR>  The number of argument characters was not 64.
+<NAK>33<CR>  I2C bus timeout
+<NAK>34<CR>  I2C bus slave failed to acknowledge
 
 ---------------------------------------------------------------
 LOAD       configure all signal channels to previously stored settings
@@ -277,7 +284,6 @@ response:
 <NAK>32<CR>  no data was stored at that memory index (configuration unchnaged)
 <NAK>33<CR>  I2C bus timeout
 <NAK>34<CR>  I2C bus slave failed to acknowledge
-
 
 ---------------------------------------------------------------
 SAVE      save settings of all signal channels
@@ -302,9 +308,9 @@ where n is the channel number as one hex digit.
 
 response:
 <ACK>vvvv<CR>
-where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the RF rms voltage at the output of channel n.  The value is in ADC counts, and there is an analog voltage gain of 5.5 before the ADC.  The measured voltage V can be converted to power as
+where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the RF rms voltage at the output of channel n.  The value is in ADC counts, and there is an analog voltage gain of 7.5*0.306=2.296 before the ADC.  The measured voltage V can be converted to power as
 
-    P = (V/5.5)^2/R
+    P = (V/2.296)^2/R
 
 where R = 50 ohms assumed to be the load impedance at the output of the channel.
 
