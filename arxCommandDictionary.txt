@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.2
+ARX Command Dictionary, rev 1.3 (corresponds to software ver 1.2 [0x0102])
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -6,24 +6,25 @@ Change log
 2020-12-15:  Rev 1.1.  Revise maximum total length of command and response strings from 64 to 80 characters.  Swap command namse SETS and SETA for better pneumonics.  Add commands for 1-wire temperature sensors.
 2021-02-01:  Rev 1.2.  Add long response time for OWSE and OWTE.  Moved OWSE to utility group of commands.  Add error responses for OW?? commands.  Revised LOAD and SAVE to allow choice of 3 memory locations and add error codes.
 2021-02-20:  For SETC, add explanation that attenuator bits are inverted.
-
+2021-03-15:  SW ver 1.2 (0x0102).  Make address 127 (0x7F, address byte 0xFF) reserved.  GETSN command now returns 16b serial number as hex4 along with hex4 software version.  Add description of RSET command.
+2021-05-15:  Rev 1.3.  Add information about scaling of analog monitor data.  Add note to GTIM,STIM that no clock is implemented and delete time information from LAST.  Corrected response string lengths for POWA and CURA commands.
 
 
 ======
 SYNTAX
 ------
 
-Analog signal processing is organized into line-replaceable-units (LRUs) which handle 16 signals each.  An LRU is called an Analog Receiver Board (ARX Board), and there are 44 of them to handle the 704 signals from the antennas of LWA352.  Each ARX Board contains control and monitor circuitry to support all 16 of its signals.
+Analog signal processing is organized into line-replaceable-units (LRUs) which handle 16 signals each.  An LRU is called an Analog Receiver Board (ARX Board).  We need 44 of them to handle the 704 signals from the antennas of LWA352.  Each ARX Board contains control and monitor circuitry to support all 16 of its signals.
 
-Control and monitoring communication is via an RS485 serial bus that is common to all 44 boards, each of which has a unique 8b address.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.
+Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 8b address.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.
 
 Command:  <a><code><arguments><CR>
 where 
-<a> is the 1-byte address of the board.  Its value must be between 0x80 and 0xFF (128 to 255), allowing 128 possible addresses.  This is the only byte in a command that is not ASCII, and should be the only one with its MSb set, allowing it to be distinguished as the start of a command. 
+<a> is the 1-byte address of the board.  Its value must be between 0x80 and 0xFE (128 to 254), allowing 127 possible addresses.  This is the only byte in a command or response that is not ASCII, and should be the only one with its MSb set, allowing it to be distinguished as the start of a command. 
 <code> is exactly 4 ASCII characters consisting of upper-case letters and digits.  This defines the command.
 <arguments> is a string of 0 to 74 ASCII characters.  (Maximum length of the complete command message is 80 characters.)  Any character except <CR> is allowed, and the detailed syntax is command-dependent.  In most cases, <arguments> consists of hex digits from the set {0-9,A-F} and is broken into fields representing numerical values.  Numerical values are always sent MSB first.
 
-Commands are ignored by all boards whose address does not match <a>.  If no board has a matching address, no response is returned.  a=0x80 is a special case; no board should match that address, but instead it indicates that the command is addressed to all boards (broadcast).  They should all interpret it and act on it, but no board should send a response.  Broadcasting a command that normally returns meaningful data is probably useless since nothing will be returned, but it is not an error.
+Commands are ignored by all boards whose address does not match <a>.  If no board has a matching address, no response is returned.  a=0x80 is a special case; no board should match that address, but instead it indicates that the command is addressed to all boards (broadcast).  They should all interpret it and act on it, but no board should send a response.  Broadcasting a command that normally returns meaningful data is probably useless since nothing will be returned, but it is not an error.  Address 0xFF is reserved and should not be used.
 
 Response (success):  <ACK>[<reply>]<CR>
 where
@@ -35,10 +36,10 @@ where
 <NAK> = 0x15 indicates that the command was not accepted;
 <e> is a 1-character generic error code with these meanings:
 1  the command code was not recognized and no action was taken;
-2  the command was too long (64 bytes were received and none was <CR>) and no action was taken (characters after the 64th are ignored until the next address byte is received);
+2  the command was too long (80 bytes were received and none was <CR>) and no action was taken (characters after the 80th are ignored until the next <CR> and address byte are received);
 3  the command failed, in which case <f> is a 1-character reason code that is command-dependent.  (When e=1 or 2, f=0.)
 
-All commands are designed to provide a response within 100 ms, unless an exception is given in the description of a particular command.  This means that the last response character should be received by the controller no later than 100 ms after it sends the last command character.  If the response is not completed by then, the controller should assume that there will be no further response (e.g., because the address was invalid or because the board with that address has failed) and may begin transmitting the next command.  In the case of a broadcast command, <a>=0x80, the controller should wait 100 ms before sending another command to allow processing to be completed.
+All commands are designed to provide a response within 100 ms unless a longer time is given in the description of a particular command.  The RSET command is an exception; it produces no response.  This means that the last response character should be received by the controller no later than 100 ms after it sends the last command character.  If the response is not completed by then, the controller should assume that there will be no further response (e.g., because the address was invalid or because the board with that address has failed) and may begin transmitting the next command.  In the case of a broadcast command, <a>=0x80, the controller should wait 100 ms before sending another command to allow processing to be completed.
 
 RS485 uses asynchronous character transmission.  The baud rate can be varied (see COMM command); the initial rate when boards are delivered will be [TBD].  Each character will be transmitted as 8 bits with no parity, one start bit and one stop bit.
 
@@ -78,8 +79,17 @@ List of available commands with brief descriptions:
     {"OWSN",getOWserialNumber},  //return serial number of a one-wire device
     {"OWTE",getOWtemperatures},  //return temperatures of OW sensors
 
-The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debuggig.  The remaining commands are intended to be used operationally.
+The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debugging.  The remaining commands are intended to be used operationally.
 [1] Value can also be returned via the ANLG command by knowing the appropriate analog channel number.  On the ARX Test Board (but not on the final ARX Boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations.
+
+
+ANALOG MONITOR SCALING
+
+Some commands return the results of digitizing analog voltages on the board.  Those commands are:
+  POWA  POWC  CURA  CURC  CURB  ANLG.
+The processor includes a 10b analog-to-digital converter which is set to a range of 0 to 4.096V.  Thus, one ADC count corresponds to 4.000 mV.  All of these commands return results in ADC counts, with a range of 0 to 1023 (0 to 0x3FF).  The ANLG command provides access to each ADC channel for testing or debugging, but all useful ADC channels are more easily read by one of the other commands.  Each measured voltage corresponds in turn to a measurement of RF power or current.  The scalings are explained in the descriptions of the individual commands.  The ADC will always return a value, and the processor has no way to determine whether the value is valid, so they always respond with <ACK>.
+
+The TEMP command also uses the processor's ADC, but with special software to read an internal temperature sensor and convert the result to temperature units.
 
 
 COMMAND DESCRIPTIONS
@@ -98,15 +108,24 @@ response:
 This command should never fail.
 
 ---------------------------------------------------------------
+RSET  reset the board's processor
+
+syntax:
+<a>RSET<CR>
+
+This command does not return any response.  The board is reset to its initial state, as if the power had been cycled.
+
+---------------------------------------------------------------
 ARXN  reply with the serial number of the ARX board
 
 syntax:
 <a>ARXN<CR>
 
 response:
-<ACK>hh<CR>
+<ACK>hhhhssss<CR>
 
-hh is two HEX digits representing the serial number (00 to FF).
+hhhh is 4 hex digits representing the 16b serial number (0x00 to 0xFF) and
+ssss is 4 hex digits representing the software version code. 
 
 This commmand should never fail.
 
@@ -122,7 +141,7 @@ hh is the desired microcontroller analog channel number in hex (2 digits, 0-255)
 response:
 <ACK>hhhh<CR>
 
-hhhh is the 16b value in HEX (4 digits).
+hhhh is the 16b value in HEX (4 digits).  The range is 0 to 0x03FF = 1023.
 
 failure:
 <NAK>31<CR>  Invalid channel number.
@@ -160,6 +179,8 @@ where hhhhhhhh is 8 hex digits giving a 32b unsigned number.  This is the intege
 
 These commands cannot fail, but if fewer than 8 hex digits are given for STIM then the clock is set to an unpredictable value.
 
+As of software version 1.2, no clock is implented on the board so these commands are not useful.  GTIM will return the last value written by STIM; the value is never incremented.
+
 ---------------------------------------------------------------
 LAST    return a copy of last valid command received
 
@@ -167,10 +188,10 @@ syntax:
 <a>LAST<CR>
 
 response:
-<ACK>tttttttt<string>CR>
+<ACK><string>CR>
 
 where 
-tttttttt is a 32b unsigned integer as 8 hex digits giving the time on the board's clock at which the last valid command was received (see GTIM, STIM); and <string> is usually the entire content of the last valid command, excluding only the final <CR>.  It includes the address byte <a> from that command with its MSB cleared; this allows distinguishing a broadcast command (a=0x80) from an individual-board command.  If there was no previous valid command (e.g., if LAST was the first valid command after a power cycle or reset) then <string> is empty and the time is zero.  If the entire response message would be longer than 64 characters, then <string> is truncated to 54 characters.
+<string> is usually the entire content of the last valid command, excluding only the final <CR>.  It includes the address byte <a> from that command with its MSB cleared; this allows distinguishing a broadcast command (a=0x80) from an individual-board command.  If there was no previous valid command (e.g., if LAST was the first valid command after a power cycle or reset) then <string> is empty.  If the entire response message would be longer than 64 characters, then <string> is truncated to 54 characters.
 
 This command can be used to verify that a broadcast command was actually received, since the broadcast provides no acknowledgment.  
 
@@ -273,7 +294,7 @@ response:
 <NAK>32<CR>    write failed.  
 
 ---------------------------------------------------------------
-POWC    return total power at output of given chnanel
+POWC    return total RF power at output of given chnanel
 
 syntax:
 <a>POWCn<CR>
@@ -281,7 +302,11 @@ where n is the channel number as one hex digit.
 
 response:
 <ACK>vvvv<CR>
-where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the RF rms voltage at the ouput of channel n.  See separate documentaion on converting the number to power units.
+where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the RF rms voltage at the output of channel n.  The value is in ADC counts, and there is an analog voltage gain of 5.5 before the ADC.  The measured voltage V can be converted to power as
+
+    P = (V/5.5)^2/R
+
+where R = 50 ohms assumed to be the load impedance at the output of the channel.
 
 This command cannot fail.
 
@@ -293,7 +318,7 @@ syntax:
 
 response:
 <ACK>vvvv....vvvv<CR>
-where the response string is 48 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the rms voltage at the output of one channel, starting with channel 0.
+where the response string is 64 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the rms voltage at the output of one channel, starting with channel 0.  See POWC for discussion of scaling.
 
 This command cannot fail.
 
@@ -306,7 +331,7 @@ where n is the channel number as one hex digit.
 
 response:
 <ACK>vvvv<CR>
-where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the DC current at the input of channel n.  For coax-connected antennas, this is the current drawn by the FEE; a value of 4095 corresponds to 500 mA.  For fiber-connected antnnas, this is the photodiode current at the ARX board; 4095 corresponds to 5 mA.  This current comes from the external 15V power supply.
+where vvvv is a 16b unsigned integer as 4 hex digits, proportional to the DC current at the input of channel n.  For coax-connected antennas, this is the current drawn by the FEE; the scale is 100 mA/V.  For fiber-connected antnnas, this is the photodiode current at the ARX board; the scale is then 1.0 mA/V .  This current comes from the external 15V power supply.
 
 This command cannot fail.
 
@@ -318,7 +343,7 @@ syntax:
 
 response:
 <ACK>vvvv....vvvv<CR>
-where the response string is 48 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the current at the input of one channel, starting with channel 0.  Scaling is the same as for CURC.
+where the response string is 64 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the current at the input of one channel, starting with channel 0.  Scaling is the same as for CURC.
 
 This command cannot fail.
 
@@ -330,7 +355,7 @@ syntax:
 
 response:
 <ACK>vvvvCR>
-where vvvv is a 16b unsigned number as 4 hex digits, proportional the total DC current drawn by circuitry on this ARX board.  This current comes from the external 6V external power supply, regulated to 5V on the board.
+where vvvv is a 16b unsigned number as 4 hex digits, proportional the total DC current drawn by circuitry on this ARX board.  This current comes from the external 6V external power supply, regulated to 5V on the board.  The scale is 2000 mA/V.  
 
 ---------------------------------------------------------------
 GETA      return configurations of all channels
