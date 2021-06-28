@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.5 (corresponds to software ver 0x0105)
+ARX Command Dictionary, rev 1.6 (corresponds to software ver 0x0106)
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -10,7 +10,11 @@ Change log
 2021-05-15:  Rev 1.3.  Add information about scaling of analog monitor data.  Add note to GTIM,STIM that no clock is implemented and delete time information from LAST.  Corrected response string lengths for POWA and CURA commands.
 2021-05-15:  Correction to scaling factor in POWC command description.
 2021-05-31:  Rev 1.4.  Corrections.  Fixed filter bit descriptions in SETC; added NAK responses for I2C failures to SETS and SETA; fixed argument string length in SETA.
-2021-06-12:  Rev 1.5.  LAST command no longer clears MSB of address byte.  Max length is 80 char.
+2021-06-12:  Rev 1.5.  LAST command no longer clears MSB of address byte, but instead replaces address byte by 'b' or 'n'.  Max length is 80 char.
+2021-06-25:  Rev 1.6.  Add new SLEP (sleep) command.  
+  Add channel input types and temperature sensor mapping to ARXN response.
+  Explain that channel code = channel number - 1.  
+  Other minor edits for clarity.
 
 
 ======
@@ -19,7 +23,7 @@ SYNTAX
 
 Analog signal processing is organized into line-replaceable-units (LRUs) which handle 16 signals each.  An LRU is called an Analog Receiver Board (ARX Board).  We need 44 of them to handle the 704 signals from the antennas of LWA352.  Each ARX Board contains control and monitor circuitry to support all 16 of its signals.
 
-Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 8b address.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.
+Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 7b address.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.
 
 Command:  <a><code><arguments><CR>
 where 
@@ -44,9 +48,9 @@ where
 
 All commands are designed to provide a response within 100 ms unless a longer time is given in the description of a particular command.  The RSET command is an exception; it produces no response.  This means that the last response character should be received by the controller no later than 100 ms after it sends the last command character.  If the response is not completed by then, the controller should assume that there will be no further response (e.g., because the address was invalid or because the board with that address has failed) and may begin transmitting the next command.  In the case of a broadcast command, <a>=0x80, the controller should wait 100 ms before sending another command to allow processing to be completed.
 
-RS485 uses asynchronous character transmission.  The baud rate can be varied (see COMM command); the initial rate when boards are delivered will be [TBD].  Each character will be transmitted as 8 bits with no parity, one start bit and one stop bit.
+RS485 uses asynchronous character transmission.  The baud rate can be varied (see COMM command); the initial rate when boards are delivered will be 19200 baud.  Each character will be transmitted as 8 bits with no parity, one start bit and one stop bit.
 
-After [TBD] seconds of seeing no activity on the RS485 bus, the processor on each ARX Board will enter a sleep state.  It will awake from sleep when a new character is received, but it may not be able to do so quickly enough to receive that character correctly.  To ensure correct wakeup after extended inactivity, the controller should send an arbitrary character (any ASCII character, with bit 7 clear) and then wait [TBD] ms before sending the first command message.  [The sleep and wakeup feature is not implemented in the developmental board software that is currently available.]
+A command is available to put the processor on one or all ARX boards into a sleep state.  It will awake from sleep when a new character is received, but it may not be able to do so quickly enough to receive that character correctly.  To ensure correct wakeup, the controller should send an arbitrary character (any ASCII character, with bit 7 clear) and then wait at least 10 ms before sending the first command message.
 
 
 ======================
@@ -57,12 +61,13 @@ List of available commands with brief descriptions:
 
     {"ECHO",echo},               //return a copy of the full command string
     {"RSET",resetSoft},          //reset the processor
-    {"ARXN",getSN},              //return serial number of this ARX board
-    {"ANLG",getAnalog},          //return reading of specified analog channel
+    {"ARXN",getSN},              //return board serial number and other board-specific data
+    {"ANLG",getAnalog},          //return reading of specified ADC channel
     {"COMM",setComm},            //set RS485 address and baud rate
     {"GTIM",getTime},            //get time (seconds)
     {"STIM",setTime},            //set time (seconds)
     {"OWSE",find1W},             //find all 1-wire devices (again))
+    {"OWSN",getOWserialNumber},  //return serial number of a one-wire device
     {"LAST",lastCommand},        //return a copy of last valid command received
 
     {"SETC",setChannel},         //configure one signal channel to given value
@@ -78,12 +83,17 @@ List of available commands with brief descriptions:
     {"CURB",readBoardCurrent},   //return dc current drawn by circuitry on this ARX board [1]
     {"GETA",readSettings},       //return configurations of all channels
     {"TEMP",readTemperature},    //return processor's chip temperature  
-    {"OWDC",getOWcount},         //return number of one-wire devices
-    {"OWSN",getOWserialNumber},  //return serial number of a one-wire device
+    {"OWDC",getOWcount},   `      //return number of channel temperature sensors
     {"OWTE",getOWtemperatures},  //return temperatures of OW sensors
+    {"SLEP",goSleep},            //put processor into sleep state.
 
 The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debugging.  The remaining commands are intended to be used operationally.
-[1] Value can also be returned via the ANLG command by knowing the appropriate analog channel number.  On the ARX Test Board (but not on the final ARX Boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations.
+[1] Value can also be returned via the ANLG command by knowing the appropriate ADC channel number.  On the ARX Test Board (but not on the production Rev H boards), 4 analog channels read voltages across thermistors and allow measuring the board temperature at certain locations.
+
+
+CHANNEL NUMBERS
+
+Each ARX board handles 16 signal channels, numbered c=1 through c=16.  Many commands require a parameter or return a response that specifies a channel.  The parameter or response will always be a single hex digit whose value is c-1, 0x0 through 0xF.
 
 
 ANALOG MONITOR SCALING
@@ -119,27 +129,35 @@ syntax:
 This command does not return any response.  The board is reset to its initial state, as if the power had been cycled.
 
 ---------------------------------------------------------------
-ARXN  reply with the serial number of the ARX board
+ARXN  reply with the serial number of the ARX board and other board-specific data.
 
 syntax:
 <a>ARXN<CR>
 
 response:
-<ACK>hhhhssss<CR>
+<ACK>hhhhssssffffnntt...t<CR>
 
-hhhh is 4 hex digits representing the 16b serial number (0x00 to 0xFF) and
-ssss is 4 hex digits representing the software version code. 
+hhhh is 4 hex digits representing the 16b serial number (0x0000 to 0xFFFF);
+ssss is 4 hex digits representing the on-board software version code;
+ffff is 4 hex digits giving a bit string where each bit represents the input coupling of a signal channel, with 0 for coax-coupled and 1 for fiber coupled where bits 0:15 correspond to channels 1:16 respectively;
+nn is an 8b unsigned integer K as 2 hex digits giving the number of known temperature sensors; and
+tt...t is a string of 16 hex digits, one for each known temperature sensor in order of their index numbers, specifiying the channel (t = c-1) at which that sensor is located.  Only the first K of these are meaningful; if K<16, the remaining digits have unspecified values. 
+
+Information in the response is static, so it need not be read more than once unless the board at a given address is replaced.  It is kept in the board's non-volatile memory, so it persists after a power cycle.
+
+Normally K = N, where N is the number of installed temperature sensors detected.  (N is returned by the OWDC and OWSE commands.)  The mapping of sensors to channels is not predictible but is determined in the lab when the board is initialized, with the results stored in non-volatile memory.  The stored values are returned here.  If K=0, then no information about the mapping has been stored.  If K != N, then none of the mapping information is reliable.  For example, K>N can occur if a sensor has failed since the mapping was determined or K<N can occur if an additional sensor was installed.
+
 
 This commmand should never fail.
 
 ---------------------------------------------------------------
-ANLG  reply with 16b digitized voltage from a specified analog channel
+ANLG  reply with 16b digitized voltage from a specified ADC channel
 
 syntax:
 <a>ANLGhh<CR>
 
-hh is the desired microcontroller analog channel number in hex (2 digits, 0-255).
-(See separate list of valid channel numbers.)
+hh is the desired microcontroller ADC channel number in hex (2 digits, 0-255).
+(See microcontroller data sheet for list of valid channel numbers.)
 
 response:
 <ACK>hhhh<CR>
@@ -159,7 +177,7 @@ where a is a single ASCII character (anything other than NULL=0)
       B is a 4-digit hex number giving an unsigned 16b value (optional).
 The RS485 address is set to 0x80+a, so that future commands must start with that value to be recognized.  The baud rate is set to 16*B Hz.  If the second argument is absent, the baud rate is unchanged.
 
-CAUTION:  No check is made of the reasonableness of the arguments.
+CAUTION:  No check is made of the reasonableness of the arguments.  The new address and/or baud rate are volatile.  After a reset or power cycle, they revert to the non-volatile values set when the board was initialized.
 
 response:
 <ACK><CR>
@@ -204,7 +222,7 @@ SETC      configure one signal channel to given value
 syntax:
 <a>SETCnvvvv<CR>
 
-where n is the channel number within this board as one hex digit (0:F);
+where n = c-1 specifies the channel number as one hex digit (0:F);
       vvvv is the 16b configuration number of the channel, as 4 hex digits.
 
 The configuration number is decoded as follows.
@@ -232,7 +250,7 @@ GETC      return the configuration of one signal channel
 syntax:
 <a>GETCn<CR>
 
-where n is the channel number within this board as one hex digit (0:F);
+where n = c-1 specifies the channel number as one hex digit (0:F);
 
 response:
 <ACK>vvvv<CR>    Success.  See SETC command for decoding of vvvv.
@@ -261,7 +279,7 @@ SETA     configure all signal channels to different given values
 syntax:
 <a>SETSvvvv...vvvv<CR>
 
-where the argument string is 64 characters in 16 fields of 4 each, giving the configuration numbers for each of the 16 channels of the board, starting with channel 0.  Each configuration number has the same meaning as in SETC.
+where the argument string is 64 characters in 16 fields of 4 each, giving the configuration numbers for each of the 16 channels of the board, starting with channel 1.  Each configuration number has the same meaning as in SETC.  The configurations must be given for all 16 channels.
 
 response:
 <ACK><CR>    Success.
@@ -304,7 +322,7 @@ POWC    return total RF power at output of given chnanel
 
 syntax:
 <a>POWCn<CR>
-where n is the channel number as one hex digit.
+where n = c-1 specifies the channel number as one hex digit.
 
 response:
 <ACK>vvvv<CR>
@@ -324,7 +342,7 @@ syntax:
 
 response:
 <ACK>vvvv....vvvv<CR>
-where the response string is 64 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the rms voltage at the output of one channel, starting with channel 0.  See POWC for discussion of scaling.
+where the response string is 64 characters long, in 16 fields of 4-digit hex values, where each is a 16b unsigned integer proportional to the rms voltage at the output of one channel, starting with channel 1.  See POWC for discussion of scaling.
 
 This command cannot fail.
 
@@ -333,7 +351,7 @@ CURC      return FE or PD current for given channel
 
 syntax:
 <a>CURCn<CR>
-where n is the channel number as one hex digit.
+where n = c-1 specifies the channel as one hex digit.
 
 response:
 <ACK>vvvv<CR>
@@ -388,7 +406,7 @@ where vvvv is a 16b unsigned integer as 4 hex digits, representing the internal 
 ---------------------------------------------------------------
 OWSE        find all 1-wire devices (again))
 
-Searches for devices on the 1-wire sensor bus.  Each board can have 0 to 16 1-wire temperature sensors.  Running this command should not be necessary, since it is done automatically at startup.  See also the OWDC command for getting the number of devices.  
+Searches for devices on the 1-wire sensor bus.  Each board can have 0 to 16 1-wire temperature sensors, where each is located at one of the signal channels.  Running this command should not be necessary, since it is done automatically at startup.  See also the OWDC command for getting the number of devices. 
 
 This command may take up to 1000 ms to return a response.
 
@@ -397,14 +415,14 @@ syntax:
 (No arguments.)
 
 response:
-<ACK><a>vv<CR>
-where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+<ACK>nn<CR>
+where nn is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
 <NAK>31    error communicating on 1-wire bus
 
 ---------------------------------------------------------------
-OWDC        return number of 1-wire devices
+OWDC        return number of channel temperature sensors and their channel mappings
 
-Returns the previously-stored value of the number of devices on the 1-wire sensor bus.
+Returns the previously-stored value of the number of devices on the 1-wire sensor bus and the mapping from each sensor to a signal channel.
 
 syntax:
 <a>OWDC<CR>
@@ -412,16 +430,19 @@ syntax:
 
 response:
 <ACK>vv<CR>
-where vv is an 8b unsigned integer as 2 hex digits, representing the number of 1-wire devices found.
+where 
+nn is an 8b unsigned integer as 2 hex digits, representing the number of channel temperature sensors N.
+
+The return value N is the number in the processor's memory as a result of an earlier sensor search; no new search occurs because of this command.  (A search is done automatically at power-up or reset.  To force a new search, use the OWSE command.)
 
 This command cannot fail.
 
 ---------------------------------------------------------------
-OWSN         return serial number of a one-wire device
+OWSN         return serial number of a channel temperature sensor
 
 syntax:
 <a>OWDCn<CR>
-where n is an index number (0 to N-1, where N is the number of 1-wire devices) as 1 hex digit.
+where n is an index number (0 to N-1, where N is the number of sensors) as 1 hex digit.
 
 response:
 <ACK>vvvvvvvvvvvvvvvv<CR>
@@ -430,11 +451,13 @@ where vvvvvvvvvvvvvvvv is the 64-bit serial number as 16 hex digits, MSB first. 
 <NAK>32  argument out of range (>N).  
 
 ---------------------------------------------------------------
-OWTE         return temperatures of OW sensors
+OWTE         return channel temperatures
 
-Get temperatures of all 1-wire temperature sensors.  The Rev H boards can have up to 16 of these sensors, but usually fewer will be installed.  
+Get temperatures of all channel temperature sensors.  The Rev H boards can have up to 16 of these sensors, but usually fewer will be installed (see OWDC).
 
-This command takes from ~100 ms to several hundred ms to return a response, depending on how many 1-wire sensors are installed.
+This command takes from ~800 to ~1000 ms to return a response, depending on how many sensors are installed.
+
+Each sensor is measuring the temperature at one of the board's 16 signal channels.  In general, the relationship of sensor index to channel number is random and cannot be known until the board is tested in the lab.  It will be determined during initial setup of each board.  See ARXN for mapping from sensor index to channel.
 
 syntax:
 <a>OWTE<CR>
@@ -442,8 +465,21 @@ syntax:
 
 response:
 <ACK>vvvv...vvvv<CR>
-where vvvv is a 16b integer as 4 hex digits, representing measured temperature as a signed 12b number in units of .0625 C (4b after binary point).  There are N such values, in order of the sensor's index number (see OWSN), where N is the number of sensors.
+where vvvv is a 16b integer as 4 hex digits, representing measured temperature as a signed 12b number in units of .0625 C (4b after binary point).  There are N such values, in the order of the sensor's index number (see OWSN), where N is the number of sensors.
 <NAK>31   no sensors available
 <NAK>32   unable to read all sensors
+
+---------------------------------------------------------------
+SLEP         put board's microcontroller in low-power sleep state
+
+The processor is effectively stopped by this command.  It sends the response before sleeping (unless the command was broadcast).  Each board wakes up upon seeing the next level transition on its RS485 receive line -- i.e., the beginning of the start bit of the next character.  Thus, sending a command to *any* board will cause all boards that were sleeping to wake up.  To ensure correct wakeup, the controller should send an arbitrary character (any ASCII character, with bit 7 clear) and then wait at least 10 ms before sending the first command message.
+
+syntax:
+<a>SLEP<CR>
+(No arguments.)
+
+response:
+<ACK><CR>
+(Command cannot fail.)
 
 ---------------------------------------------------------------
