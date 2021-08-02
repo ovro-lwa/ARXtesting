@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.6 (corresponds to software ver 0x0106)
+ARX Command Dictionary, rev 1.7 (corresponds to software ver 0x0107)
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -15,6 +15,7 @@ Change log
   Add channel input types and temperature sensor mapping to ARXN response.
   Explain that channel code = channel number - 1.  
   Other minor edits for clarity.
+2021-07-27:  Rev 1.7.  Revision to COMM; both parameters are now optional and it now includes a response string.  Clarifications and wording improvements (but no substantive change) in SYNTAX section.
 
 
 ======
@@ -23,7 +24,7 @@ SYNTAX
 
 Analog signal processing is organized into line-replaceable-units (LRUs) which handle 16 signals each.  An LRU is called an Analog Receiver Board (ARX Board).  We need 44 of them to handle the 704 signals from the antennas of LWA352.  Each ARX Board contains control and monitor circuitry to support all 16 of its signals.
 
-Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 7b address.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.
+Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 7b address.  It uses a master-slave protocol, with a single controller (typically a general-purpose computer) acting as master.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.  Each ARX board is a slave to the controller; it transmits on the bus only in response to a command.
 
 Command:  <a><code><arguments><CR>
 where 
@@ -46,11 +47,11 @@ where
 2  the command was too long (80 bytes were received and none was <CR>) and no action was taken (characters after the 80th are ignored until the next <CR> and address byte are received);
 3  the command failed, in which case <f> is a 1-character reason code that is command-dependent.  (When e=1 or 2, f=0.)
 
-All commands are designed to provide a response within 100 ms unless a longer time is given in the description of a particular command.  The RSET command is an exception; it produces no response.  This means that the last response character should be received by the controller no later than 100 ms after it sends the last command character.  If the response is not completed by then, the controller should assume that there will be no further response (e.g., because the address was invalid or because the board with that address has failed) and may begin transmitting the next command.  In the case of a broadcast command, <a>=0x80, the controller should wait 100 ms before sending another command to allow processing to be completed.
+All commands are designed to provide a response within 100 ms unless a longer time is given in the description of a particular command.  This means that the last response character should be received by the controller no later than 100 ms after it sends the last command character.  If the response is not completed by then, the controller should assume that there will be no further response (e.g., because the address was invalid or because the board with that address has failed) and may begin transmitting the next command.  The RSET command is an exception; it produces no response.  In the case of a broadcast command, <a>=0x80, where there will also be no response, the controller should wait 100 ms before sending another command to allow processing to be completed.
 
 RS485 uses asynchronous character transmission.  The baud rate can be varied (see COMM command); the initial rate when boards are delivered will be 19200 baud.  Each character will be transmitted as 8 bits with no parity, one start bit and one stop bit.
 
-A command is available to put the processor on one or all ARX boards into a sleep state.  It will awake from sleep when a new character is received, but it may not be able to do so quickly enough to receive that character correctly.  To ensure correct wakeup, the controller should send an arbitrary character (any ASCII character, with bit 7 clear) and then wait at least 10 ms before sending the first command message.
+A command is available (SLEP) to put the processor on one or all ARX boards into a sleep state.  It will awake from sleep when a new character is received, but it may not be able to do so quickly enough to receive that character correctly.  To ensure correct wakeup, the controller should send an arbitrary character (any ASCII character, with bit 7 clear) and then wait at least 10 ms before sending the first command message.
 
 
 ======================
@@ -168,21 +169,29 @@ failure:
 <NAK>31<CR>  Invalid channel number.
 
 ---------------------------------------------------------------
-COMM   set RS485 address and baud rate
+COMM   get persistent RS485 address and baud rate, and optionally change their non-persistent values.
 
 syntax:
-<a>COMMa[<B>]<CR>
+<a>COMM[aa][bbbb]<CR>
 
-where a is a single ASCII character (anything other than NULL=0)
-      B is a 4-digit hex number giving an unsigned 16b value (optional).
-The RS485 address is set to 0x80+a, so that future commands must start with that value to be recognized.  The baud rate is set to 16*B Hz.  If the second argument is absent, the baud rate is unchanged.
+where aa is a 2-character hex number giving an unsigned 8b value that represents the new address.  The MSB may or may not be set.
+      bbbb is a 4-digit hex number giving an unsigned 16b value B.  The baud rate is set to 16*B Hz.  
 
-CAUTION:  No check is made of the reasonableness of the arguments.  The new address and/or baud rate are volatile.  After a reset or power cycle, they revert to the non-volatile values set when the board was initialized.
+If the second argument is absent, the baud rate is unchanged.  If both arguments are absent, neither the address nor baud rate is changed.
 
-response:
-<ACK><CR>
+The new address and/or baud rate are volatile.  After a reset or power cycle, they revert to the non-volatile values set when the board was initialized.
 
-This command cannot fail, but giving unreasonable arguments may make future communication impossible until the processor is reset.  Normally this command is used only in the laboratory for inital setup of the board.
+CAUTION:  This command should not be broadcast unless it is known that only one board is connected to the bus, or no arguments are given.  Changing the address to the same as that of another board can disable communication to both boards.  
+
+response, success:
+<ACK>aabbbb<CR>
+where aa is the persistent address from non-volatile memory, and
+      bbbb is the persistent baud rate code from non-volatile memory.
+
+failure:
+<NAK>31<CR>   Invalid address (not 1 to 126)
+<NAK>32<CR>   Argument contains a non-hex character
+<NAK>33<CR>   Attempt to change baud rate failed
 
 ---------------------------------------------------------------
 GTIM   get time (seconds)
