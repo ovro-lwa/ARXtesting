@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.7 (corresponds to software ver 0x0107)
+ARX Command Dictionary, rev 1.7a (corresponds to software ver 0x0107)
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -16,7 +16,7 @@ Change log
   Explain that channel code = channel number - 1.  
   Other minor edits for clarity.
 2021-07-27:  Rev 1.7.  Revision to COMM; both parameters are now optional and it now includes a response string.  Clarifications and wording improvements (but no substantive change) in SYNTAX section.
-
+2021-08-19:  Rev 1.7a.  Correct errors in description of OWDC.  No change to implementation.
 
 ======
 SYNTAX
@@ -24,7 +24,7 @@ SYNTAX
 
 Analog signal processing is organized into line-replaceable-units (LRUs) which handle 16 signals each.  An LRU is called an Analog Receiver Board (ARX Board).  We need 44 of them to handle the 704 signals from the antennas of LWA352.  Each ARX Board contains control and monitor circuitry to support all 16 of its signals.
 
-Control and monitoring communication is via an RS485 serial bus that is common to all boards, each of which has a unique 7b address.  It uses a master-slave protocol, with a single controller (typically a general-purpose computer) acting as master.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.  Each ARX board is a slave to the controller; it transmits on the bus only in response to a command.
+Control and monitoring communication is via a half-duplex (2 wire) RS485 serial bus that is common to all boards, each of which has a unique 7b address.  It uses a master-slave protocol, with a single controller (typically a general-purpose computer) acting as master.  Communication consists of sending a command string over the bus and receiving a response string over the bus.  Each string consists of ASCII characters, with the following syntax.  Each ARX board is a slave to the controller; it transmits on the bus only in response to a command.
 
 Command:  <a><code><arguments><CR>
 where 
@@ -429,20 +429,19 @@ where nn is an 8b unsigned integer as 2 hex digits, representing the number of 1
 <NAK>31    error communicating on 1-wire bus
 
 ---------------------------------------------------------------
-OWDC        return number of channel temperature sensors and their channel mappings
+OWDC        return number of channel temperature sensors
 
-Returns the previously-stored value of the number of devices on the 1-wire sensor bus and the mapping from each sensor to a signal channel.
+Returns the previously-stored value of the number of devices on the 1-wire sensor bus.
 
 syntax:
 <a>OWDC<CR>
 (No arguments.)
 
 response:
-<ACK>vv<CR>
-where 
-nn is an 8b unsigned integer as 2 hex digits, representing the number of channel temperature sensors N.
+<ACK>nn<CR>
+where nn is an 8b unsigned integer as 2 hex digits, representing the number of channel temperature sensors.
 
-The return value N is the number in the processor's memory as a result of an earlier sensor search; no new search occurs because of this command.  (A search is done automatically at power-up or reset.  To force a new search, use the OWSE command.)
+The return value is the number in the processor's memory as a result of an earlier sensor search; no new search occurs because of this command.  (A search is done automatically at power-up or reset.  To force a new search, use the OWSE command.)
 
 This command cannot fail.
 
