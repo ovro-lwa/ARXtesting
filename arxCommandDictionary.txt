@@ -1,4 +1,4 @@
-ARX Command Dictionary, rev 1.7a (corresponds to software ver 0x0107)
+ARX Command Dictionary, rev 1.7c (corresponds to software ver 0x0107)
 
 Change log
 2020-03-27:  Initial version, rev 0.0.
@@ -17,6 +17,8 @@ Change log
   Other minor edits for clarity.
 2021-07-27:  Rev 1.7.  Revision to COMM; both parameters are now optional and it now includes a response string.  Clarifications and wording improvements (but no substantive change) in SYNTAX section.
 2021-08-19:  Rev 1.7a.  Correct errors in description of OWDC.  No change to implementation.
+2021-08-27:  Rev 1.7b.  Fix typo in OWSN syntax.  No change to implementation.
+2021-08-29:  Rev 1.7c.  Move RSET and ARXN from utilities group to operational group.  Correct descriptions of filter selection bits in SETC.  No change to implementation.
 
 ======
 SYNTAX
@@ -61,8 +63,6 @@ DICTIONARY OF COMMANDS
 List of available commands with brief descriptions:
 
     {"ECHO",echo},               //return a copy of the full command string
-    {"RSET",resetSoft},          //reset the processor
-    {"ARXN",getSN},              //return board serial number and other board-specific data
     {"ANLG",getAnalog},          //return reading of specified ADC channel
     {"COMM",setComm},            //set RS485 address and baud rate
     {"GTIM",getTime},            //get time (seconds)
@@ -71,6 +71,8 @@ List of available commands with brief descriptions:
     {"OWSN",getOWserialNumber},  //return serial number of a one-wire device
     {"LAST",lastCommand},        //return a copy of last valid command received
 
+    {"RSET",resetSoft},          //reset the processor
+    {"ARXN",getSN},              //return board serial number and other board-specific data
     {"SETC",setChannel},         //configure one signal channel to given value
     {"GETC",getChannel},         //return current configuration of one signal channel
     {"SETS",setAllSame},         //configure all signal channels to the same given value
@@ -84,8 +86,8 @@ List of available commands with brief descriptions:
     {"CURB",readBoardCurrent},   //return dc current drawn by circuitry on this ARX board [1]
     {"GETA",readSettings},       //return configurations of all channels
     {"TEMP",readTemperature},    //return processor's chip temperature  
-    {"OWDC",getOWcount},   `      //return number of channel temperature sensors
-    {"OWTE",getOWtemperatures},  //return temperatures of OW sensors
+    {"OWDC",getOWcount},         //return number of channel temperature sensors
+    {"OWTE",getOWtemperatures},  //return channel temperatures
     {"SLEP",goSleep},            //put processor into sleep state.
 
 The first group of commands ("ECHO" ... "LAST") are low-level utilities intended primarily for testing and debugging.  The remaining commands are intended to be used operationally.
@@ -94,7 +96,7 @@ The first group of commands ("ECHO" ... "LAST") are low-level utilities intended
 
 CHANNEL NUMBERS
 
-Each ARX board handles 16 signal channels, numbered c=1 through c=16.  Many commands require a parameter or return a response that specifies a channel.  The parameter or response will always be a single hex digit whose value is c-1, 0x0 through 0xF.
+Each ARX board handles 16 signal channels, numbered c=1 through c=16.  Many commands require a parameter or return a response that specifies a channel.  The parameter or response is always a single hex digit whose value is c-1, 0x0 through 0xF.
 
 
 ANALOG MONITOR SCALING
@@ -235,9 +237,9 @@ where n = c-1 specifies the channel number as one hex digit (0:F);
       vvvv is the 16b configuration number of the channel, as 4 hex digits.
 
 The configuration number is decoded as follows.
-b0    lowpass filter selection 1=narrow (LPF1, lower cutoff freq), 0=wide (LPF2).
+b0    highpass filter selection 1=narrow (HPF1, higher cutoff freq), 0=wide (HPF2).
 b1    ==b0 for normal operation, !=b0 for signal off.
-b2    highpass filter selection, 1=narrow (HPF1, higher cutoff freq), 0=wide (HPF2).
+b2    lowpass filter selection, 1=narrow (LPF1, lower cutoff freq), 0=wide (LPF2).
 b3:8  first attenuator setting (inverted*), 0:0.5:31.5 dB.
 b9:14 second attenuator setting (inverted*), 0:0.5:31.5 dB.
 b15   input DC power (0=off, 1=on).
@@ -449,14 +451,14 @@ This command cannot fail.
 OWSN         return serial number of a channel temperature sensor
 
 syntax:
-<a>OWDCn<CR>
+<a>OWSNn<CR>
 where n is an index number (0 to N-1, where N is the number of sensors) as 1 hex digit.
 
 response:
 <ACK>vvvvvvvvvvvvvvvv<CR>
 where vvvvvvvvvvvvvvvv is the 64-bit serial number as 16 hex digits, MSB first.  Each 1-wire devie has a unique hardware serial number.
 <NAK>31  argument invalid
-<NAK>32  argument out of range (>N).  
+<NAK>32  argument out of range (> N-1).  
 
 ---------------------------------------------------------------
 OWTE         return channel temperatures
